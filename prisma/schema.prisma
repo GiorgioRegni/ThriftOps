@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MemberRole {
+  owner
+  admin
+  member
+  viewer
+}
+
+model Org {
+  id              String   @id @default(uuid())
+  name            String
+  ownerUid        String
+  defaultCurrency String   @default("USD")
+  taxSettings     Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  members   Member[]
+  items     Item[]
+  purchases Purchase[]
+  sales     Sale[]
+  payments  Payment[]
+  expenses  Expense[]
+  events    Event[]
+  listings  Listing[]
+}
+
+model Member {
+  uid         String
+  orgId       String
+  email       String
+  displayName String
+  role        MemberRole @default(member)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([orgId, uid])
+  @@index([uid])
+}
+
+model Item {
+  id                     String    @id @default(uuid())
+  orgId                  String
+  itemCode               String
+  category               String
+  status                 String
+  brand                  String
+  itemType               String
+  title                  String
+  description            String
+  size                   String
+  material               String
+  color                  String
+  condition              String
+  styleTags              Json
+  seasonTags             Json
+  measurements           Json
+  costBasisCents         Int
+  acquiredAt             DateTime
+  listedAt               DateTime?
+  soldAt                 DateTime?
+  sourcePurchaseId       String?
+  sourceVendor           String
+  sourceLocation         String
+  storageLocation        String
+  photos                 Json
+  listingUrls            Json
+  currentListPriceCents  Int?
+  originalListPriceCents Int?
+  notes                  String
+  importSource           Json?
+  reviewFlags            Json
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  createdBy              String
+  updatedBy              String
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, itemCode])
+  @@index([orgId, category])
+  @@index([orgId, status])
+  @@index([orgId, createdAt])
+}
+
+model Purchase {
+  id                  String   @id @default(uuid())
+  orgId               String
+  date                DateTime
+  vendor              String
+  location            String
+  totalCents          Int
+  subtotalCents       Int?
+  taxCents            Int?
+  paymentAccount      String
+  paymentMethod       String
+  receiptPhotos       Json
+  itemIds             Json
+  allocationMode      String
+  allocatedTotalCents Int
+  unallocatedCents    Int
+  notes               String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String
+  updatedBy           String
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, date])
+}
+
+model Sale {
+  id                       String   @id @default(uuid())
+  orgId                    String
+  soldAt                   DateTime
+  channel                  String
+  eventId                  String?
+  buyerName                String?
+  buyerContact             String?
+  paymentMethod            String
+  grossItemSubtotalCents   Int
+  discountCents            Int
+  shippingChargedCents     Int
+  salesTaxCollectedCents   Int
+  marketplaceCollectedTax  Boolean
+  platformFeeCents         Int
+  paymentFeeCents          Int
+  actualShippingCostCents  Int
+  packagingCostCents       Int
+  otherCostCents           Int
+  totalReceivedCents       Int
+  payoutStatus             String
+  paymentIds               Json
+  notes                    String
+  proofPhotos              Json
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+  createdBy                String
+  updatedBy                String
+
+  org       Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  saleItems SaleItem[]
+
+  @@index([orgId, soldAt])
+}
+
+model SaleItem {
+  id                          String   @id @default(uuid())
+  orgId                       String
+  saleId                      String
+  itemId                      String
+  itemCode                    String
+  titleSnapshot               String
+  brandSnapshot               String
+  itemTypeSnapshot            String
+  categorySnapshot            String
+  costBasisCents              Int
+  allocatedSalePriceCents     Int
+  allocatedDiscountCents      Int
+  allocatedPlatformFeeCents   Int
+  allocatedPaymentFeeCents    Int
+  allocatedShippingCostCents  Int
+  allocatedPackagingCostCents Int
+  allocatedEventFeeCents      Int
+  netProfitCents              Int
+  daysHeld                    Int
+  daysListed                  Int?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, saleId])
+  @@index([orgId, itemId])
+}
+
+model Payment {
+  id                    String   @id @default(uuid())
+  orgId                 String
+  date                  DateTime
+  source                String
+  amountCents           Int
+  externalTransactionId String?
+  counterparty          String?
+  note                  String?
+  matchedSaleIds        Json
+  status                String
+  importedFrom          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, date])
+}
+
+model Expense {
+  id               String   @id @default(uuid())
+  orgId            String
+  date             DateTime
+  category         String
+  vendor           String
+  amountCents      Int
+  paymentMethod    String
+  linkedItemId     String?
+  linkedSaleId     String?
+  linkedPurchaseId String?
+  receiptPhotos    Json
+  taxDeductible    Boolean
+  notes            String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, date])
+}
+
+model Event {
+  id             String   @id @default(uuid())
+  orgId          String
+  name           String
+  date           DateTime
+  location       String
+  boothFeeCents  Int
+  notes          String
+  itemIdsBrought Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String
+  updatedBy      String
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, date])
+}
+
+model Listing {
+  id             String    @id @default(uuid())
+  orgId          String
+  itemId         String
+  channel        String
+  title          String
+  description    String
+  listPriceCents Int
+  listingUrl     String
+  status         String
+  listedAt       DateTime
+  endedAt        DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, itemId])
+}

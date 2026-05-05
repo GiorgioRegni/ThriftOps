@@ -1,0 +1,43 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOrgMember(orgId) {
+      return signedIn() && firestore.exists(/databases/(default)/documents/orgs/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function isReasonableImage() {
+      return request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches("image/.*");
+    }
+
+    // Deny all by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /orgs/{orgId}/items/{itemId}/photos/{fileName} {
+      allow read: if isOrgMember(orgId);
+      allow write: if isOrgMember(orgId) && isReasonableImage();
+    }
+
+    match /orgs/{orgId}/purchases/{purchaseId}/receipts/{fileName} {
+      allow read: if isOrgMember(orgId);
+      allow write: if isOrgMember(orgId) && isReasonableImage();
+    }
+
+    match /orgs/{orgId}/expenses/{expenseId}/receipts/{fileName} {
+      allow read: if isOrgMember(orgId);
+      allow write: if isOrgMember(orgId) && isReasonableImage();
+    }
+
+    match /orgs/{orgId}/sales/{saleId}/proof/{fileName} {
+      allow read: if isOrgMember(orgId);
+      allow write: if isOrgMember(orgId) && isReasonableImage();
+    }
+  }
+}

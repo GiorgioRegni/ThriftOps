@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    { "collectionGroup": "items", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "acquiredAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "items", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "category", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }] },
+    { "collectionGroup": "items", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "brand", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }] },
+    { "collectionGroup": "items", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "itemType", "order": "ASCENDING" }, { "fieldPath": "status", "order": "ASCENDING" }] },
+    { "collectionGroup": "sales", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "soldAt", "order": "DESCENDING" }, { "fieldPath": "channel", "order": "ASCENDING" }] },
+    { "collectionGroup": "sales", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "payoutStatus", "order": "ASCENDING" }, { "fieldPath": "soldAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "expenses", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "date", "order": "DESCENDING" }, { "fieldPath": "category", "order": "ASCENDING" }] },
+    { "collectionGroup": "payments", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "status", "order": "ASCENDING" }, { "fieldPath": "date", "order": "DESCENDING" }] },
+    { "collectionGroup": "events", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "date", "order": "DESCENDING" }] }
+  ],
+  "fieldOverrides": []
+}
