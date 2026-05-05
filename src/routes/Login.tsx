@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { z } from "zod";
 import { TextField } from "../components/forms/TextField";
-import { signInWithEmail, signUpWithEmail } from "../services/authService";
+import { signInWithEmail, signInWithGoogle, signUpWithEmail } from "../services/authService";
 import { useAuth } from "../hooks/useAuth";
 
 const schema = z.object({ email: z.string().email(), password: z.string().min(6), displayName: z.string().optional() });
@@ -43,6 +43,20 @@ export const Login = () => {
         </div>
         {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
         <button className="tap mt-5 w-full rounded-md bg-ink px-4 font-medium text-white">{mode === "signup" ? "Create account" : "Sign in"}</button>
+        <button
+          type="button"
+          className="tap mt-2 w-full rounded-md border px-4 text-sm font-semibold"
+          onClick={async () => {
+            setError("");
+            try {
+              await signInWithGoogle();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Google sign-in failed.");
+            }
+          }}
+        >
+          Continue with Google
+        </button>
         <button type="button" className="tap mt-2 w-full rounded-md border px-4 text-sm" onClick={() => setMode(mode === "signup" ? "signin" : "signup")}>
           {mode === "signup" ? "Sign in instead" : "Create an account"}
         </button>

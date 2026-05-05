@@ -1,4 +1,4 @@
-import { adminFirestore } from "./firebaseAdmin.js";
+import { adminFirestore } from "./firebaseAdmin.ts";
 
 export const mirrorOrgOwner = async (input: { orgId: string; uid: string; email: string; displayName: string; orgName: string }) => {
   const now = new Date();
@@ -21,6 +21,17 @@ export const mirrorOrgOwner = async (input: { orgId: string; uid: string; email:
     createdAt: now
   });
   await batch.commit();
+};
+
+export const mirrorOrgMember = async (input: { orgId: string; uid: string; email: string; displayName: string; role: string }) => {
+  await adminFirestore.doc(`orgs/${input.orgId}/members/${input.uid}`).set({
+    uid: input.uid,
+    email: input.email,
+    displayName: input.displayName,
+    role: input.role,
+    mirroredFrom: "supabase-prisma",
+    updatedAt: new Date()
+  }, { merge: true });
 };
 
 export const mirrorOrgUpdate = async (orgId: string, patch: Record<string, unknown>) => {

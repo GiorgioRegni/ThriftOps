@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
-import { adminAuth } from "./firebaseAdmin.js";
-import { prisma } from "./prisma.js";
+import { adminAuth } from "./firebaseAdmin.ts";
+import { mirrorOrgMember } from "./firestoreMirror.ts";
+import { prisma } from "./prisma.ts";
 
 export interface AuthUser {
   uid: string;
@@ -18,10 +19,20 @@ declare global {
 }
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  status: number;
+
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
   }
 }
+
+const adminEmails = (process.env.ADMIN_EMAILS || "giorgio@3i7.net")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+
+export const isFullAdmin = (user?: AuthUser): boolean => Boolean(user?.email && adminEmails.includes(user.email.toLowerCase()));
 
 export const requireAuth = async (req: Request, _res: Response, next: NextFunction) => {
   try {
@@ -43,6 +54,17 @@ export const requireAuth = async (req: Request, _res: Response, next: NextFuncti
 export const requireOrgMember = async (req: Request, _res: Response, next: NextFunction) => {
   try {
     if (!req.user) throw new HttpError(401, "Authentication required.");
+    if (isFullAdmin(req.user)) {
+      req.memberRole = "admin";
+      await mirrorOrgMember({
+        orgId: String(req.params.orgId),
+        uid: req.user.uid,
+        email: req.user.email,
+        displayName: req.user.displayName,
+        role: "admin"
+      });
+      return next();
+    }
     const member = await prisma.member.findUnique({
       where: { orgId_uid: { orgId: String(req.params.orgId), uid: req.user.uid } }
     });

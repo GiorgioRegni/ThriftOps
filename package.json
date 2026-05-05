@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "api:dev": "tsx backend/src/server.ts",
+    "api:dev": "node --experimental-strip-types backend/src/server.ts",
     "dev:all": "concurrently \"npm run api:dev\" \"npm run dev\"",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

@@ -3,11 +3,11 @@ import express from "express";
 import cors from "cors";
 import { Prisma } from "@prisma/client";
 import { differenceInCalendarDays } from "date-fns";
-import { netProfitForSaleItem, saleLevelNetProfit } from "../../src/lib/calculations.js";
-import { generateItemCode, nextSequenceFromCodes } from "../../src/lib/ids.js";
-import { asyncRoute, errorHandler, HttpError, requireAuth, requireManageRole, requireOrgMember, requireWriteRole } from "./http.js";
-import { mirrorOrgOwner, mirrorOrgUpdate } from "./firestoreMirror.js";
-import { prisma } from "./prisma.js";
+import { netProfitForSaleItem, saleLevelNetProfit } from "../../src/lib/calculations.ts";
+import { generateItemCode, nextSequenceFromCodes } from "../../src/lib/ids.ts";
+import { asyncRoute, errorHandler, HttpError, isFullAdmin, requireAuth, requireManageRole, requireOrgMember, requireWriteRole } from "./http.ts";
+import { mirrorOrgMember, mirrorOrgOwner, mirrorOrgUpdate } from "./firestoreMirror.ts";
+import { prisma } from "./prisma.ts";
 
 const app = express();
 const port = Number(process.env.API_PORT || 8080);
@@ -28,6 +28,18 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/api", requireAuth);
 
 app.get("/api/orgs", asyncRoute(async (req, res) => {
+  if (isFullAdmin(req.user)) {
+    const orgs = await prisma.org.findMany({ orderBy: { createdAt: "asc" } });
+    await Promise.all(orgs.map((org) => mirrorOrgMember({
+      orgId: org.id,
+      uid: req.user!.uid,
+      email: req.user!.email,
+      displayName: req.user!.displayName,
+      role: "admin"
+    })));
+    res.json(orgs);
+    return;
+  }
   const memberships = await prisma.member.findMany({
     where: { uid: req.user!.uid },
     include: { org: true },

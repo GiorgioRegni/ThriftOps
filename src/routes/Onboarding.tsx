@@ -11,7 +11,7 @@ const schema = z.object({ name: z.string().min(2), homeState: z.string().min(2),
 
 export const Onboarding = () => {
   const { user, loading: authLoading } = useAuth();
-  const { org, refreshOrgs } = useOrg();
+  const { org, error: orgError, refreshOrgs } = useOrg();
   const [form, setForm] = useState({ name: "", homeState: "", defaultSalesTaxRateBps: 0, trackSalesTax: false });
   const [error, setError] = useState("");
   if (authLoading) return <Loading />;
@@ -37,6 +37,7 @@ export const Onboarding = () => {
         }}
       >
         <h1 className="text-xl font-semibold">Create your resale workspace</h1>
+        {orgError ? <p className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{orgError}</p> : null}
         <div className="mt-5 space-y-4">
           <TextField label="Business name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           <TextField label="Home state" value={form.homeState} onChange={(event) => setForm({ ...form, homeState: event.target.value })} />

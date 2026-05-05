@@ -24,10 +24,22 @@ import { isFirebaseConfigured, useFirebaseEmulators } from "./lib/firebase";
 
 const Protected = () => {
   const { user, loading: authLoading } = useAuth();
-  const { org, loading: orgLoading } = useOrg();
+  const { org, loading: orgLoading, error: orgError, refreshOrgs } = useOrg();
   const location = useLocation();
   if (authLoading || orgLoading) return <Loading />;
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
+  if (orgError) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 p-4">
+        <section className="w-full max-w-md rounded-lg border bg-white p-5 shadow-sm">
+          <h1 className="text-xl font-semibold">Unable to load workspace</h1>
+          <p className="mt-2 text-sm text-muted">{orgError}</p>
+          <p className="mt-3 text-sm text-muted">Confirm the API is running and Firebase Admin credentials are configured.</p>
+          <button className="tap mt-5 rounded-md bg-ink px-4 py-2 text-sm font-medium text-white" onClick={() => void refreshOrgs()}>Retry</button>
+        </section>
+      </main>
+    );
+  }
   if (!org && location.pathname !== "/onboarding") return <Navigate to="/onboarding" replace />;
   return <AppShell />;
 };

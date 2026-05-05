@@ -20,11 +20,10 @@ ThriftOps is a mobile-first private operating system for a small clothing and ho
 npm install
 cp .env.example .env
 npm run prisma:generate
-npm run api:dev
-npm run dev
+make dev
 ```
 
-Set the Firebase, API, and `DATABASE_URL` values in `.env`. `DATABASE_URL` should point at Supabase Postgres or a local Postgres database. To use Firebase emulators for Auth/Storage/Firestore mirror rules:
+Set the Firebase, API, `ADMIN_EMAILS`, and `DATABASE_URL` values in `.env`. `DATABASE_URL` should point at Supabase Postgres or a local Postgres database. To use Firebase emulators for Auth/Storage/Firestore mirror rules:
 
 ```bash
 VITE_USE_FIREBASE_EMULATORS=true npm run dev
@@ -33,10 +32,12 @@ npm run firebase:emulators
 
 The emulator script passes `--project demo-thriftops`, so local emulator testing does not require a real Firebase project. The emulator suite uses non-default ports to avoid common local conflicts: Auth `17099`, Firestore `17080`, Firestore websocket `17150`, Storage `17199`, Hosting `17000`, Emulator UI `17400`, Hub `17440`, and Logging `17450`.
 
+`ADMIN_EMAILS` is a comma-separated list of full-admin Firebase account emails. It defaults to `giorgio@3i7.net`.
+
 ## Firebase Setup
 
 1. Create a Firebase project.
-2. Enable Email/Password Authentication.
+2. Enable Email/Password Authentication and Google Authentication.
 3. Create a Firestore database for the minimal org/member mirror used by Storage rules.
 4. Enable Firebase Storage.
 5. Copy `.firebaserc.example` to `.firebaserc` and set your project ID.
@@ -46,6 +47,7 @@ The emulator script passes `--project demo-thriftops`, so local emulator testing
 
 ```bash
 npm run dev
+make dev
 npm run build
 npm run preview
 npm run api:dev
@@ -64,6 +66,14 @@ npm run firebase:deploy
 ## Data Model Overview
 
 Domain data lives in Supabase Postgres through Prisma models for orgs, members, items, sales, sale items, purchases, expenses, payments, events, and listings. Money is stored as integer cents. Persisted dates are ISO strings over the REST API and `DateTime` in Postgres. Every item has an item code such as `W-2026-000001`; every sale writes sale item records and updates sold item status in one API transaction.
+
+## Product Docs
+
+- [Functional specification](docs/FUNCTIONAL_SPEC.md)
+- [PRD](docs/PRD.md)
+- [Data model](docs/DATA_MODEL.md)
+- [Accounting notes](docs/ACCOUNTING_NOTES.md)
+- [Import mapping](docs/IMPORT_MAPPING.md)
 
 ## Import Instructions
 
