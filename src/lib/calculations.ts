@@ -69,6 +69,12 @@ export const daysListed = (soldAt?: string, listedAt?: string): number | undefin
 export const isMultiItemSale = (saleItems: unknown[]): boolean => saleItems.length >= 2;
 export const averageOrderValue = (grossRevenueCents: number, numberOfSales: number): number => (numberOfSales ? Math.round(grossRevenueCents / numberOfSales) : 0);
 export const averageItemSalePrice = (grossItemSubtotalCents: number, soldItemCount: number): number => (soldItemCount ? Math.round(grossItemSubtotalCents / soldItemCount) : 0);
+export const grossReturnMultiple = (grossItemSubtotalCents: number, cogsCents: number): number =>
+  cogsCents ? grossItemSubtotalCents / cogsCents : 0;
+export const grossMarginRate = (grossItemSubtotalCents: number, cogsCents: number): number =>
+  grossItemSubtotalCents ? (grossItemSubtotalCents - cogsCents) / grossItemSubtotalCents : 0;
+export const inventoryRevenuePotential = (activeInventoryValueCents: number, grossReturnMultipleValue: number): number =>
+  Math.round(activeInventoryValueCents * grossReturnMultipleValue);
 export const shippingProfitLoss = (shippingChargedCents: number, actualShippingCostCents: number, packagingCostCents: number): number =>
   shippingChargedCents - actualShippingCostCents - packagingCostCents;
 

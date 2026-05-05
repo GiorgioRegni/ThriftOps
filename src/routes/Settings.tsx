@@ -1,12 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TextField } from "../components/forms/TextField";
 import { useOrg } from "../hooks/useOrg";
 import { updateOrgSettings } from "../services/orgService";
 
+const defaultTaxSettings = { homeState: "", trackSalesTax: false, defaultSalesTaxRateBps: 0 };
+
 export const Settings = () => {
   const { org, refreshOrgs } = useOrg();
   const [message, setMessage] = useState("");
-  const [form, setForm] = useState({ name: org?.name ?? "", homeState: org?.taxSettings.homeState ?? "", trackSalesTax: org?.taxSettings.trackSalesTax ?? false, defaultSalesTaxRateBps: org?.taxSettings.defaultSalesTaxRateBps ?? 0 });
+  const [form, setForm] = useState({ name: "", ...defaultTaxSettings });
+
+  useEffect(() => {
+    if (!org) return;
+    const taxSettings = org.taxSettings ?? defaultTaxSettings;
+    setForm({
+      name: org.name,
+      homeState: taxSettings.homeState ?? "",
+      trackSalesTax: taxSettings.trackSalesTax ?? false,
+      defaultSalesTaxRateBps: taxSettings.defaultSalesTaxRateBps ?? 0
+    });
+  }, [org]);
+
   if (!org) return null;
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -18,6 +32,7 @@ export const Settings = () => {
         setMessage("Settings saved.");
       }}>
         <TextField label="Org name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+        <TextField label="Organization ID" value={org.id} readOnly onFocus={(event) => event.currentTarget.select()} />
         <TextField label="Default state" value={form.homeState} onChange={(event) => setForm({ ...form, homeState: event.target.value })} />
         <TextField label="Default sales tax rate bps" type="number" value={form.defaultSalesTaxRateBps} onChange={(event) => setForm({ ...form, defaultSalesTaxRateBps: Number(event.target.value) })} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.trackSalesTax} onChange={(event) => setForm({ ...form, trackSalesTax: event.target.checked })} /> Track sales tax</label>

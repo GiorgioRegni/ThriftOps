@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeInventoryValue, agingBucketForDays, cogsForDateRange, netProfitForSaleItem, shippingProfitLoss, staleInventoryBuckets } from "../lib/calculations";
+import { activeInventoryValue, agingBucketForDays, cogsForDateRange, grossMarginRate, grossReturnMultiple, inventoryRevenuePotential, netProfitForSaleItem, shippingProfitLoss, staleInventoryBuckets } from "../lib/calculations";
 import { centsFromDecimal, formatMoney } from "../lib/money";
 
 describe("money", () => {
@@ -26,6 +26,22 @@ describe("profit calculations", () => {
 
   it("calculates shipping profit/loss", () => {
     expect(shippingProfitLoss(900, 725, 100)).toBe(75);
+  });
+
+  it("calculates gross return multiple", () => {
+    expect(grossReturnMultiple(1000, 500)).toBe(2);
+    expect(grossReturnMultiple(1000, 0)).toBe(0);
+  });
+
+  it("calculates gross margin rate", () => {
+    expect(grossMarginRate(1000, 500)).toBe(0.5);
+    expect(grossMarginRate(0, 500)).toBe(0);
+  });
+
+  it("calculates inventory revenue potential", () => {
+    expect(inventoryRevenuePotential(500000, 2)).toBe(1000000);
+    expect(inventoryRevenuePotential(0, 2)).toBe(0);
+    expect(inventoryRevenuePotential(500000, 0)).toBe(0);
   });
 
   it("calculates COGS for sold items in range", () => {

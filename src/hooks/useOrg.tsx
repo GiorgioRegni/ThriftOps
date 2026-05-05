@@ -22,13 +22,17 @@ const OrgContext = createContext<OrgContextValue>({
 });
 
 export const OrgProvider = ({ children }: { children: ReactNode }) => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [activeOrgId, setActiveOrgIdState] = useState<string>(() => localStorage.getItem("thriftops.activeOrgId") ?? "");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const refreshOrgs = useCallback(async () => {
+    if (authLoading) {
+      setLoading(true);
+      return;
+    }
     if (!user) {
       setOrgs([]);
       setError("");
@@ -50,7 +54,7 @@ export const OrgProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setLoading(false);
     }
-  }, [activeOrgId, user]);
+  }, [activeOrgId, authLoading, user]);
 
   useEffect(() => {
     void refreshOrgs();

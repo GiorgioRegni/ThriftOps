@@ -4,6 +4,7 @@ import { apiRequest } from "./apiClient";
 
 export interface DashboardSalePreview {
   id: string;
+  soldAt: string;
   channel: SaleChannel;
   grossItemSubtotalCents: number;
   itemCount: number;

@@ -31,6 +31,8 @@ model Org {
   expenses  Expense[]
   events    Event[]
   listings  Listing[]
+  importRuns ImportRun[]
+  importRecords ImportRecord[]
 }
 
 model Member {
@@ -266,4 +268,46 @@ model Listing {
   org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, itemId])
+}
+
+model ImportRun {
+  id          String    @id @default(uuid())
+  orgId       String
+  mode        String
+  changedMode String
+  workbookPaths Json
+  fileHashes  Json
+  stats       Json
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  createdBy   String
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, startedAt])
+}
+
+model ImportRecord {
+  id                 String   @id @default(uuid())
+  orgId              String
+  workbookName       String
+  sheetName          String
+  sourceRowNumber    Int
+  sourceKey          String
+  rowHash            String
+  importedRecordType String
+  importedRecordId   String?
+  relatedRecordIds   Json
+  status             String
+  reviewFlags        Json
+  sourceRow          Json
+  lastRunId          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, workbookName, sheetName, sourceKey])
+  @@index([orgId, status])
+  @@index([orgId, importedRecordType, importedRecordId])
 }

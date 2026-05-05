@@ -37,22 +37,27 @@ export const Dashboard = () => {
   if (!data) return null;
 
   const { metrics, recentSales, staleItems } = data;
+  const percent = (value: number) => `${Math.round(value * 100)}%`;
+  const multiple = (value: number) => `${value.toFixed(1)}x`;
+  const monthlyTrend = (thisMonth: string, lastMonth: string) => `This month: ${thisMonth} · Last month: ${lastMonth}`;
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Dashboard"
-        actions={<button className="tap flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold shadow-card"><CalendarDays size={16} /> This Month</button>}
+        actions={<button className="tap flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold shadow-card"><CalendarDays size={16} /> All time + this month</button>}
       />
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Gross Sales" value={formatMoney(metrics.grossSalesThisMonthCents)} icon={<DollarSign size={18} />} trend="this month" />
-        <MetricCard label="Net Profit (est.)" value={formatMoney(metrics.netProfitThisMonthCents)} icon={<TrendingUp size={18} />} trend="after COGS" />
+        <MetricCard label="Gross Sales" value={formatMoney(metrics.grossSalesAllTimeCents)} icon={<DollarSign size={18} />} trend={monthlyTrend(formatMoney(metrics.grossSalesThisMonthCents), formatMoney(metrics.grossSalesLastMonthCents))} />
+        <MetricCard label="Net Profit (est.)" value={formatMoney(metrics.netProfitAllTimeCents)} icon={<TrendingUp size={18} />} trend={monthlyTrend(formatMoney(metrics.netProfitThisMonthCents), formatMoney(metrics.netProfitLastMonthCents))} />
         <MetricCard label="Active Inventory Value" value={formatMoney(metrics.activeInventoryValueCents)} icon={<Package size={18} />} />
         <MetricCard label="Active Item Count" value={String(metrics.activeItemCount)} icon={<Tag size={18} />} />
-        <MetricCard label="Sold Items" value={String(metrics.soldItemsThisMonth)} />
-        <MetricCard label="Avg. Order Value" value={formatMoney(metrics.averageOrderValueCents)} />
-        <MetricCard label="Multi-Item Sale Rate" value={`${Math.round(metrics.multiItemSaleRate * 100)}%`} />
-        <MetricCard label="Shipping Profit / Loss" value={formatMoney(metrics.shippingProfitLossCents)} />
+        <MetricCard label="Sold Items" value={String(metrics.soldItemsAllTime)} trend={monthlyTrend(String(metrics.soldItemsThisMonth), String(metrics.soldItemsLastMonth))} />
+        <MetricCard label="Avg. Order Value" value={formatMoney(metrics.averageOrderValueAllTimeCents)} trend={monthlyTrend(formatMoney(metrics.averageOrderValueThisMonthCents), formatMoney(metrics.averageOrderValueLastMonthCents))} />
+        <MetricCard label="Gross Return Multiple" value={multiple(metrics.grossReturnMultipleAllTime)} trend={monthlyTrend(multiple(metrics.grossReturnMultipleThisMonth), multiple(metrics.grossReturnMultipleLastMonth))} />
+        <MetricCard label="Gross Margin" value={percent(metrics.grossMarginRateAllTime)} trend={monthlyTrend(percent(metrics.grossMarginRateThisMonth), percent(metrics.grossMarginRateLastMonth))} />
+        <MetricCard label="Inventory Revenue Potential" value={formatMoney(metrics.inventoryRevenuePotentialCents)} trend="Based on active inventory x gross return multiple" />
+        <MetricCard label="Shipping Profit / Loss" value={formatMoney(metrics.shippingProfitLossAllTimeCents)} trend={monthlyTrend(formatMoney(metrics.shippingProfitLossThisMonthCents), formatMoney(metrics.shippingProfitLossLastMonthCents))} />
         <MetricCard label="Stale Inventory (90+ days)" value={String(metrics.staleInventoryCount90Plus)} />
         <MetricCard label="Unmatched Payments" value={String(metrics.unmatchedPaymentCount)} />
       </section>
@@ -67,7 +72,7 @@ export const Dashboard = () => {
               <Link to={`/sales/${sale.id}`} key={sale.id} className="flex items-center justify-between gap-3 rounded-xl px-1 py-1 text-sm hover:bg-slate-50">
                 <div>
                   <p className="font-semibold">{formatMoney(sale.grossItemSubtotalCents)}</p>
-                  <p className="text-xs text-muted">{sale.channel.replaceAll("_", " ")} · {sale.itemCount} items</p>
+                  <p className="text-xs text-muted">{new Date(sale.soldAt).toLocaleDateString()} · {sale.channel.replaceAll("_", " ")} · {sale.itemCount} items</p>
                 </div>
                 <p className="text-sm font-bold text-emerald-600">{formatMoney(sale.grossItemSubtotalCents)}</p>
               </Link>

@@ -15,6 +15,11 @@ export const createOrg = async (_uid: string, _email: string, _displayName: stri
   return result.id;
 };
 
+export const joinOrg = async (orgId: string): Promise<string> => {
+  const result = await apiRequest<{ id: string }>("/api/orgs/join", { method: "POST", body: JSON.stringify({ orgId }) });
+  return result.id;
+};
+
 export const updateOrgSettings = async (orgId: string, input: Partial<CreateOrgInput> & { name?: string }): Promise<void> => {
   await apiRequest<Org>(`/api/orgs/${orgId}`, { method: "PATCH", body: JSON.stringify(input) });
 };

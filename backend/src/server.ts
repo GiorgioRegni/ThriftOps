@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import { Prisma } from "@prisma/client";
 import { differenceInCalendarDays } from "date-fns";
-import { averageOrderValue, netProfitForSaleItem, saleLevelNetProfit, shippingProfitLoss } from "../../src/lib/calculations.ts";
+import { averageOrderValue, grossMarginRate, grossReturnMultiple, inventoryRevenuePotential, netProfitForSaleItem, saleLevelNetProfit, shippingProfitLoss } from "../../src/lib/calculations.ts";
 import { generateItemCode, nextSequenceFromCodes } from "../../src/lib/ids.ts";
 import { asyncRoute, errorHandler, HttpError, isFullAdmin, requireAuth, requireManageRole, requireOrgMember, requireWriteRole } from "./http.ts";
 import { hasItemPageQuery, itemOrderByFromSort, itemWhereFromPageQuery, parseItemPageQuery } from "./itemQuery.ts";
@@ -46,6 +46,31 @@ const saleItemsBySaleId = <T extends { saleId: string }>(saleItems: T[]) => sale
   acc[saleItem.saleId] = [...(acc[saleItem.saleId] ?? []), saleItem];
   return acc;
 }, {});
+const salesMetricSummary = <T extends {
+  id: string;
+  grossItemSubtotalCents: number;
+  discountCents: number;
+  shippingChargedCents: number;
+  platformFeeCents: number;
+  paymentFeeCents: number;
+  actualShippingCostCents: number;
+  packagingCostCents: number;
+  otherCostCents: number;
+}>(sales: T[], bySale: Record<string, Array<{ costBasisCents: number }>>) => {
+  const grossSalesCents = sales.reduce((sum, sale) => sum + sale.grossItemSubtotalCents, 0);
+  const cogsCents = sales.reduce((sum, sale) => sum + (bySale[sale.id] ?? []).reduce((itemSum, saleItem) => itemSum + saleItem.costBasisCents, 0), 0);
+  return {
+    grossSalesCents,
+    cogsCents,
+    netProfitCents: sales.reduce((sum, sale) => sum + saleLevelNetProfit(sale, bySale[sale.id] ?? []), 0),
+    soldItems: sales.reduce((sum, sale) => sum + (bySale[sale.id] ?? []).length, 0),
+    averageOrderValueCents: averageOrderValue(grossSalesCents, sales.length),
+    grossReturnMultiple: grossReturnMultiple(grossSalesCents, cogsCents),
+    grossMarginRate: grossMarginRate(grossSalesCents, cogsCents),
+    multiItemSaleRate: sales.length ? sales.filter((sale) => (bySale[sale.id] ?? []).length >= 2).length / sales.length : 0,
+    shippingProfitLossCents: sales.reduce((sum, sale) => sum + shippingProfitLoss(sale.shippingChargedCents, sale.actualShippingCostCents, sale.packagingCostCents), 0)
+  };
+};
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/api", requireAuth);
@@ -275,29 +300,59 @@ app.get("/api/orgs/:orgId/dashboard", asyncRoute(async (req, res) => {
   const orgId = param(req, "orgId");
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const staleThreshold = new Date(now);
   staleThreshold.setDate(staleThreshold.getDate() - 90);
   const activeInventory = await prisma.item.aggregate({ where: { orgId, status: { in: activeItemStatuses } }, _count: true, _sum: { costBasisCents: true } });
+  const activeInventoryValueCents = activeInventory._sum.costBasisCents ?? 0;
   const staleInventoryCount90Plus = await prisma.item.count({ where: { orgId, status: { in: activeItemStatuses }, acquiredAt: { lt: staleThreshold } } });
   const staleItems = await prisma.item.findMany({ where: { orgId, status: { in: activeItemStatuses } }, orderBy: [{ acquiredAt: "asc" }, { id: "asc" }], take: 3 });
+  const allSales = await prisma.sale.findMany({ where: { orgId }, orderBy: { soldAt: "desc" } });
   const monthSales = await prisma.sale.findMany({ where: { orgId, soldAt: { gte: monthStart, lte: now } }, orderBy: { soldAt: "desc" } });
+  const lastMonthSales = await prisma.sale.findMany({ where: { orgId, soldAt: { gte: lastMonthStart, lt: monthStart } }, orderBy: { soldAt: "desc" } });
   const recentSales = await prisma.sale.findMany({ where: { orgId }, orderBy: { soldAt: "desc" }, take: 5 });
   const unmatchedPaymentCount = await prisma.payment.count({ where: { orgId, status: { not: "matched" } } });
-  const relatedSaleIds = [...new Set([...monthSales, ...recentSales].map((sale) => sale.id))];
-  const saleItems = relatedSaleIds.length ? await prisma.saleItem.findMany({ where: { orgId, saleId: { in: relatedSaleIds } } }) : [];
+  const saleItems = allSales.length ? await prisma.saleItem.findMany({ where: { orgId, saleId: { in: allSales.map((sale) => sale.id) } } }) : [];
   const bySale = saleItemsBySaleId(saleItems);
-  const grossSalesThisMonthCents = monthSales.reduce((sum, sale) => sum + sale.grossItemSubtotalCents, 0);
+  const allTimeMetrics = salesMetricSummary(allSales, bySale);
+  const monthMetrics = salesMetricSummary(monthSales, bySale);
+  const lastMonthMetrics = salesMetricSummary(lastMonthSales, bySale);
 
   res.json({
     metrics: {
-      grossSalesThisMonthCents,
-      netProfitThisMonthCents: monthSales.reduce((sum, sale) => sum + saleLevelNetProfit(sale, bySale[sale.id] ?? []), 0),
-      activeInventoryValueCents: activeInventory._sum.costBasisCents ?? 0,
+      grossSalesAllTimeCents: allTimeMetrics.grossSalesCents,
+      netProfitAllTimeCents: allTimeMetrics.netProfitCents,
+      grossSalesThisMonthCents: monthMetrics.grossSalesCents,
+      netProfitThisMonthCents: monthMetrics.netProfitCents,
+      grossSalesLastMonthCents: lastMonthMetrics.grossSalesCents,
+      netProfitLastMonthCents: lastMonthMetrics.netProfitCents,
+      activeInventoryValueCents,
       activeItemCount: activeInventory._count,
-      soldItemsThisMonth: monthSales.reduce((sum, sale) => sum + (bySale[sale.id] ?? []).length, 0),
-      averageOrderValueCents: averageOrderValue(grossSalesThisMonthCents, monthSales.length),
-      multiItemSaleRate: monthSales.length ? monthSales.filter((sale) => (bySale[sale.id] ?? []).length >= 2).length / monthSales.length : 0,
-      shippingProfitLossCents: monthSales.reduce((sum, sale) => sum + shippingProfitLoss(sale.shippingChargedCents, sale.actualShippingCostCents, sale.packagingCostCents), 0),
+      inventoryRevenuePotentialCents: inventoryRevenuePotential(activeInventoryValueCents, allTimeMetrics.grossReturnMultiple),
+      soldItemsAllTime: allTimeMetrics.soldItems,
+      soldItemsThisMonth: monthMetrics.soldItems,
+      soldItemsLastMonth: lastMonthMetrics.soldItems,
+      cogsAllTimeCents: allTimeMetrics.cogsCents,
+      cogsThisMonthCents: monthMetrics.cogsCents,
+      cogsLastMonthCents: lastMonthMetrics.cogsCents,
+      averageOrderValueAllTimeCents: allTimeMetrics.averageOrderValueCents,
+      averageOrderValueThisMonthCents: monthMetrics.averageOrderValueCents,
+      averageOrderValueLastMonthCents: lastMonthMetrics.averageOrderValueCents,
+      averageOrderValueCents: allTimeMetrics.averageOrderValueCents,
+      grossReturnMultipleAllTime: allTimeMetrics.grossReturnMultiple,
+      grossReturnMultipleThisMonth: monthMetrics.grossReturnMultiple,
+      grossReturnMultipleLastMonth: lastMonthMetrics.grossReturnMultiple,
+      grossMarginRateAllTime: allTimeMetrics.grossMarginRate,
+      grossMarginRateThisMonth: monthMetrics.grossMarginRate,
+      grossMarginRateLastMonth: lastMonthMetrics.grossMarginRate,
+      multiItemSaleRateAllTime: allTimeMetrics.multiItemSaleRate,
+      multiItemSaleRateThisMonth: monthMetrics.multiItemSaleRate,
+      multiItemSaleRateLastMonth: lastMonthMetrics.multiItemSaleRate,
+      multiItemSaleRate: allTimeMetrics.multiItemSaleRate,
+      shippingProfitLossAllTimeCents: allTimeMetrics.shippingProfitLossCents,
+      shippingProfitLossThisMonthCents: monthMetrics.shippingProfitLossCents,
+      shippingProfitLossLastMonthCents: lastMonthMetrics.shippingProfitLossCents,
+      shippingProfitLossCents: allTimeMetrics.shippingProfitLossCents,
       staleInventoryCount90Plus,
       unmatchedPaymentCount
     },
