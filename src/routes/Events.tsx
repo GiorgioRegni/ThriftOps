@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DateInput } from "../components/forms/DateInput";
 import { MoneyInput } from "../components/forms/MoneyInput";
 import { TextField } from "../components/forms/TextField";
@@ -8,20 +8,34 @@ import { centsFromDecimal, formatMoney } from "../lib/money";
 import { timestampFromInput, todayInput } from "../lib/dates";
 import { useAuth } from "../hooks/useAuth";
 import { useOrg } from "../hooks/useOrg";
-import { useEvents } from "../hooks/useEvents";
-import { useSales } from "../hooks/useSales";
-import { createEvent } from "../services/eventService";
+import { createEvent, getEventSummary, type EventSummaryData } from "../services/eventService";
+import { Loading } from "../components/common/Loading";
 
 export const Events = () => {
   const { org } = useOrg();
   const { user } = useAuth();
-  const { events, refresh } = useEvents();
-  const { sales, saleItemsBySale } = useSales();
+  const [summary, setSummary] = useState<EventSummaryData>({ events: [], latest: null });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [form, setForm] = useState({ name: "", date: todayInput(), location: "", boothFee: "", notes: "" });
+  const refresh = useCallback(async () => {
+    if (!org) return;
+    setLoading(true);
+    setError("");
+    try {
+      setSummary(await getEventSummary(org.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load events.");
+    } finally {
+      setLoading(false);
+    }
+  }, [org]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
   if (!org || !user) return null;
-  const selected = events[0];
-  const selectedSales = selected ? sales.filter((sale) => sale.eventId === selected.id) : [];
-  const gross = selectedSales.reduce((sum, sale) => sum + sale.grossItemSubtotalCents, 0);
+  if (loading) return <Loading label="Loading events..." />;
+  if (error) return <div className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-700">{error}</div>;
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">Events</h2>
@@ -36,8 +50,8 @@ export const Events = () => {
         <MoneyInput label="Booth fee" value={form.boothFee} onChange={(event) => setForm({ ...form, boothFee: event.target.value })} />
         <button className="tap rounded-md bg-ink px-4 text-white md:col-span-3">Create event</button>
       </form>
-      {selected ? <section className="grid gap-3 sm:grid-cols-4"><MetricCard label="Latest event gross" value={formatMoney(gross)} /><MetricCard label="Items sold" value={String(selectedSales.flatMap((sale) => saleItemsBySale[sale.id] ?? []).length)} /><MetricCard label="AOV" value={formatMoney(selectedSales.length ? Math.round(gross / selectedSales.length) : 0)} /><MetricCard label="Profit after booth" value={formatMoney(gross - selected.boothFeeCents)} /></section> : null}
-      <ReportTable columns={["date", "name", "location", "boothFee"]} rows={events.map((event) => ({ date: new Date(event.date).toLocaleDateString(), name: event.name, location: event.location, boothFee: formatMoney(event.boothFeeCents) }))} />
+      {summary.latest ? <section className="grid gap-3 sm:grid-cols-4"><MetricCard label="Latest event gross" value={formatMoney(summary.latest.grossCents)} /><MetricCard label="Items sold" value={String(summary.latest.itemCount)} /><MetricCard label="AOV" value={formatMoney(summary.latest.averageOrderValueCents)} /><MetricCard label="Profit after booth" value={formatMoney(summary.latest.profitAfterBoothCents)} /></section> : null}
+      <ReportTable columns={["date", "name", "location", "boothFee"]} rows={summary.events.map((event) => ({ date: new Date(event.date).toLocaleDateString(), name: event.name, location: event.location, boothFee: formatMoney(event.boothFeeCents) }))} />
     </div>
   );
 };

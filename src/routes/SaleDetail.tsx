@@ -1,29 +1,49 @@
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader, Pill, SurfaceCard } from "../components/common/ui";
 import { Loading } from "../components/common/Loading";
 import { formatMoney } from "../lib/money";
 import { saleLevelNetProfit } from "../lib/calculations";
-import { useSales } from "../hooks/useSales";
+import { useOrg } from "../hooks/useOrg";
+import { getSaleDetail, type SaleDetailResponse } from "../services/saleService";
 
 export const SaleDetail = () => {
   const { saleId } = useParams();
-  const { sales, saleItemsBySale, loading } = useSales();
-  const sale = sales.find((candidate) => candidate.id === saleId);
-  const saleItems = sale ? saleItemsBySale[sale.id] ?? [] : [];
+  const { org } = useOrg();
+  const [detail, setDetail] = useState<SaleDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const refresh = useCallback(async () => {
+    if (!org || !saleId) return;
+    setLoading(true);
+    setError("");
+    try {
+      setDetail(await getSaleDetail(org.id, saleId));
+    } catch (err) {
+      setDetail(null);
+      setError(err instanceof Error ? err.message : "Unable to load sale.");
+    } finally {
+      setLoading(false);
+    }
+  }, [org, saleId]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   if (loading) return <Loading />;
-  if (!sale) {
+  if (!detail) {
     return (
       <div className="space-y-4">
         <PageHeader title="Sale Detail" back />
         <SurfaceCard>
-          <p className="text-sm text-muted">Sale not found.</p>
+          <p className="text-sm text-muted">{error || "Sale not found."}</p>
           <Link className="mt-3 inline-flex text-sm font-semibold text-primary-600" to="/sales">Back to sales</Link>
         </SurfaceCard>
       </div>
     );
   }
 
+  const { sale, items: saleItems } = detail;
   const netProfit = saleLevelNetProfit(sale, saleItems);
   const fees = sale.platformFeeCents + sale.paymentFeeCents;
   const shippingNet = sale.shippingChargedCents - sale.actualShippingCostCents - sale.packagingCostCents;

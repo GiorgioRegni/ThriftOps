@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { Plus, Search, ShoppingCart } from "lucide-react";
 import { DateInput } from "../components/forms/DateInput";
@@ -11,10 +11,10 @@ import { centsFromDecimal, formatMoney } from "../lib/money";
 import { timestampFromInput, todayInput } from "../lib/dates";
 import { useAuth } from "../hooks/useAuth";
 import { useOrg } from "../hooks/useOrg";
-import { useItems } from "../hooks/useItems";
 import { useEvents } from "../hooks/useEvents";
 import { createSale, type SaleCartItem } from "../services/saleService";
-import type { PaymentMethod, SaleChannel } from "../types/domain";
+import { searchItems } from "../services/itemService";
+import type { Item, PaymentMethod, SaleChannel } from "../types/domain";
 import { EmptyAction, PageHeader, PrimaryButton, SecondaryButton, SurfaceCard } from "../components/common/ui";
 
 const schema = z.object({ soldAt: z.string().min(1), channel: z.string().min(1), paymentMethod: z.string().min(1) });
@@ -22,9 +22,10 @@ const schema = z.object({ soldAt: z.string().min(1), channel: z.string().min(1),
 export const Sell = () => {
   const { org } = useOrg();
   const { user } = useAuth();
-  const { items, refresh } = useItems();
   const { events } = useEvents();
   const [search, setSearch] = useState("");
+  const [matches, setMatches] = useState<Item[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [cart, setCart] = useState<SaleCartItem[]>([]);
   const [scanOpen, setScanOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -46,15 +47,37 @@ export const Sell = () => {
     buyerName: "",
     notes: ""
   });
-  const matches = useMemo(() => {
-    const term = search.toLowerCase();
-    return items.filter((item) => item.status !== "sold").filter((item) => [item.itemCode, item.brand, item.title, item.itemType].some((value) => value.toLowerCase().includes(term))).slice(0, 8);
-  }, [items, search]);
+  useEffect(() => {
+    if (!org || !search.trim()) {
+      setMatches([]);
+      setSearchLoading(false);
+      return;
+    }
+    const timeout = window.setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        setMatches(await searchItems(org.id, search.trim(), 8));
+      } catch {
+        setMatches([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [org, search]);
   if (!org || !user) return null;
-  const addItem = (itemId: string) => {
-    const item = items.find((candidate) => candidate.id === itemId || candidate.itemCode === itemId || `thriftops:item:${candidate.itemCode}` === itemId);
+  const addItem = (item: Item) => {
     if (!item || cart.some((cartItem) => cartItem.item.id === item.id)) return;
     setCart([...cart, { item, salePriceCents: item.currentListPriceCents ?? 0 }]);
+  };
+  const addItemByLookup = async (value: string) => {
+    const local = matches.find((candidate) => candidate.id === value || candidate.itemCode === value || `thriftops:item:${candidate.itemCode}` === value);
+    if (local) {
+      addItem(local);
+      return;
+    }
+    const [item] = await searchItems(org.id, value, 1);
+    if (item) addItem(item);
   };
   const setValue = (key: keyof typeof form, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }));
   const gross = cart.reduce((sum, cartItem) => sum + cartItem.salePriceCents, 0);
@@ -70,8 +93,8 @@ export const Sell = () => {
         <div className="mt-2 flex gap-2">
           <SecondaryButton type="button" onClick={() => setScanOpen(!scanOpen)}><Search size={16} className="mr-2 inline" />Scan QR</SecondaryButton>
         </div>
-        {scanOpen ? <div className="mt-3"><QRScanner onScan={(value) => { addItem(value); setScanOpen(false); }} /></div> : null}
-        {search ? <div className="mt-3 space-y-2">{matches.map((item) => <button key={item.id} className="tap flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-left text-sm" onClick={() => addItem(item.id)}><span>{item.itemCode} · {item.brand} {item.itemType}</span><Plus size={16} /></button>)}</div> : null}
+        {scanOpen ? <div className="mt-3"><QRScanner onScan={(value) => { void addItemByLookup(value); setScanOpen(false); }} /></div> : null}
+        {search ? <div className="mt-3 space-y-2">{searchLoading ? <p className="text-sm text-muted">Searching...</p> : matches.map((item) => <button key={item.id} className="tap flex w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-left text-sm" onClick={() => addItem(item)}><span>{item.itemCode} · {item.brand} {item.itemType}</span><Plus size={16} /></button>)}</div> : null}
       </SurfaceCard>
       <section>
         <h3 className="mb-2 text-sm font-bold">Items in Cart ({cart.length})</h3>
@@ -106,7 +129,8 @@ export const Sell = () => {
             });
             setMessage(`Sale saved. Estimated net profit ${formatMoney(result.netProfitCents)}.`);
             setCart([]);
-            await refresh();
+            setSearch("");
+            setMatches([]);
           } catch (err) {
             setMessage(err instanceof Error ? err.message : "Unable to save sale.");
           }

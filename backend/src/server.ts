@@ -3,17 +3,30 @@ import express from "express";
 import cors from "cors";
 import { Prisma } from "@prisma/client";
 import { differenceInCalendarDays } from "date-fns";
-import { netProfitForSaleItem, saleLevelNetProfit } from "../../src/lib/calculations.ts";
+import { averageOrderValue, netProfitForSaleItem, saleLevelNetProfit, shippingProfitLoss } from "../../src/lib/calculations.ts";
 import { generateItemCode, nextSequenceFromCodes } from "../../src/lib/ids.ts";
 import { asyncRoute, errorHandler, HttpError, isFullAdmin, requireAuth, requireManageRole, requireOrgMember, requireWriteRole } from "./http.ts";
+import { hasItemPageQuery, itemOrderByFromSort, itemWhereFromPageQuery, parseItemPageQuery } from "./itemQuery.ts";
 import { mirrorOrgMember, mirrorOrgOwner, mirrorOrgUpdate } from "./firestoreMirror.ts";
 import { prisma } from "./prisma.ts";
 
 const app = express();
 const port = Number(process.env.API_PORT || 8080);
-const allowedOrigin = process.env.API_ALLOWED_ORIGIN || "http://localhost:5173";
+const allowedOrigins = (process.env.API_ALLOWED_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors({ origin: allowedOrigin, credentials: true }));
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`CORS origin not allowed: ${origin}`));
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: "2mb" }));
 
 const parseDate = (value: unknown, fallback = new Date()) => (typeof value === "string" || value instanceof Date ? new Date(value) : fallback);
@@ -23,6 +36,16 @@ const body = (req: express.Request) => req.body as Record<string, any>;
 const param = (req: express.Request, key: string) => String(req.params[key]);
 const allocate = (amount: number, itemAmount: number, total: number) => (total ? Math.round((amount * itemAmount) / total) : 0);
 const dateDiff = (end?: Date | null, start?: Date | null) => end && start ? Math.max(0, differenceInCalendarDays(end, start)) : 0;
+const activeItemStatuses = ["draft", "active", "listed", "reserved"];
+const csvValues = (value: unknown): string[] => String(value || "").split(",").map((entry) => entry.trim()).filter(Boolean);
+const positiveInt = (value: unknown, fallback: number): number => {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+const saleItemsBySaleId = <T extends { saleId: string }>(saleItems: T[]) => saleItems.reduce<Record<string, T[]>>((acc, saleItem) => {
+  acc[saleItem.saleId] = [...(acc[saleItem.saleId] ?? []), saleItem];
+  return acc;
+}, {});
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/api", requireAuth);
@@ -78,6 +101,32 @@ app.post("/api/orgs", asyncRoute(async (req, res) => {
   res.status(201).json({ id: org.id, org });
 }));
 
+app.post("/api/orgs/join", asyncRoute(async (req, res) => {
+  const input = body(req);
+  const orgId = String(input.orgId || "").trim();
+  if (!orgId) throw new HttpError(400, "Organization ID is required.");
+
+  const org = await prisma.org.findUnique({ where: { id: orgId } });
+  if (!org) throw new HttpError(404, "Organization not found.");
+
+  await prisma.member.upsert({
+    where: { orgId_uid: { orgId, uid: req.user!.uid } },
+    create: {
+      orgId,
+      uid: req.user!.uid,
+      email: req.user!.email,
+      displayName: req.user!.displayName,
+      role: "member"
+    },
+    update: {
+      email: req.user!.email,
+      displayName: req.user!.displayName
+    }
+  });
+  await mirrorOrgMember({ orgId, uid: req.user!.uid, email: req.user!.email, displayName: req.user!.displayName, role: "member" });
+  res.status(201).json({ id: org.id, org });
+}));
+
 app.patch("/api/orgs/:orgId", requireOrgMember, requireManageRole, asyncRoute(async (req, res) => {
   const input = body(req);
   const orgId = param(req, "orgId");
@@ -101,7 +150,52 @@ app.patch("/api/orgs/:orgId", requireOrgMember, requireManageRole, asyncRoute(as
 app.use("/api/orgs/:orgId", requireOrgMember);
 
 app.get("/api/orgs/:orgId/items", asyncRoute(async (req, res) => {
-  res.json(await prisma.item.findMany({ where: { orgId: param(req, "orgId") }, orderBy: { createdAt: "desc" } }));
+  const orgId = param(req, "orgId");
+  if (!hasItemPageQuery(req.query)) {
+    res.json(await prisma.item.findMany({ where: { orgId }, orderBy: { createdAt: "desc" } }));
+    return;
+  }
+
+  const pageQuery = parseItemPageQuery(req.query);
+  const where = itemWhereFromPageQuery(orgId, pageQuery);
+  const [items, total] = await prisma.$transaction([
+    prisma.item.findMany({
+      where,
+      orderBy: itemOrderByFromSort(pageQuery.sort),
+      skip: (pageQuery.page - 1) * pageQuery.pageSize,
+      take: pageQuery.pageSize
+    }),
+    prisma.item.count({ where })
+  ]);
+
+  res.json({ items, total, page: pageQuery.page, pageSize: pageQuery.pageSize });
+}));
+
+app.get("/api/orgs/:orgId/items/search", asyncRoute(async (req, res) => {
+  const orgId = param(req, "orgId");
+  const query = String(req.query.query || "").trim();
+  const limit = Math.min(25, positiveInt(req.query.limit, 8));
+  if (!query) {
+    res.json([]);
+    return;
+  }
+  const itemCode = query.replace(/^thriftops:item:/i, "");
+  res.json(await prisma.item.findMany({
+    where: {
+      orgId,
+      status: { not: "sold" },
+      OR: [
+        { id: query },
+        { itemCode: { equals: itemCode, mode: "insensitive" } },
+        { itemCode: { contains: itemCode, mode: "insensitive" } },
+        { brand: { contains: query, mode: "insensitive" } },
+        { title: { contains: query, mode: "insensitive" } },
+        { itemType: { contains: query, mode: "insensitive" } }
+      ]
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: limit
+  }));
 }));
 
 app.get("/api/orgs/:orgId/items/:itemId", asyncRoute(async (req, res) => {
@@ -177,8 +271,96 @@ app.post("/api/orgs/:orgId/items/:itemId/photos", requireWriteRole, asyncRoute(a
   res.json(updated);
 }));
 
+app.get("/api/orgs/:orgId/dashboard", asyncRoute(async (req, res) => {
+  const orgId = param(req, "orgId");
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const staleThreshold = new Date(now);
+  staleThreshold.setDate(staleThreshold.getDate() - 90);
+  const activeInventory = await prisma.item.aggregate({ where: { orgId, status: { in: activeItemStatuses } }, _count: true, _sum: { costBasisCents: true } });
+  const staleInventoryCount90Plus = await prisma.item.count({ where: { orgId, status: { in: activeItemStatuses }, acquiredAt: { lt: staleThreshold } } });
+  const staleItems = await prisma.item.findMany({ where: { orgId, status: { in: activeItemStatuses } }, orderBy: [{ acquiredAt: "asc" }, { id: "asc" }], take: 3 });
+  const monthSales = await prisma.sale.findMany({ where: { orgId, soldAt: { gte: monthStart, lte: now } }, orderBy: { soldAt: "desc" } });
+  const recentSales = await prisma.sale.findMany({ where: { orgId }, orderBy: { soldAt: "desc" }, take: 5 });
+  const unmatchedPaymentCount = await prisma.payment.count({ where: { orgId, status: { not: "matched" } } });
+  const relatedSaleIds = [...new Set([...monthSales, ...recentSales].map((sale) => sale.id))];
+  const saleItems = relatedSaleIds.length ? await prisma.saleItem.findMany({ where: { orgId, saleId: { in: relatedSaleIds } } }) : [];
+  const bySale = saleItemsBySaleId(saleItems);
+  const grossSalesThisMonthCents = monthSales.reduce((sum, sale) => sum + sale.grossItemSubtotalCents, 0);
+
+  res.json({
+    metrics: {
+      grossSalesThisMonthCents,
+      netProfitThisMonthCents: monthSales.reduce((sum, sale) => sum + saleLevelNetProfit(sale, bySale[sale.id] ?? []), 0),
+      activeInventoryValueCents: activeInventory._sum.costBasisCents ?? 0,
+      activeItemCount: activeInventory._count,
+      soldItemsThisMonth: monthSales.reduce((sum, sale) => sum + (bySale[sale.id] ?? []).length, 0),
+      averageOrderValueCents: averageOrderValue(grossSalesThisMonthCents, monthSales.length),
+      multiItemSaleRate: monthSales.length ? monthSales.filter((sale) => (bySale[sale.id] ?? []).length >= 2).length / monthSales.length : 0,
+      shippingProfitLossCents: monthSales.reduce((sum, sale) => sum + shippingProfitLoss(sale.shippingChargedCents, sale.actualShippingCostCents, sale.packagingCostCents), 0),
+      staleInventoryCount90Plus,
+      unmatchedPaymentCount
+    },
+    recentSales: recentSales.map((sale) => ({ ...sale, itemCount: (bySale[sale.id] ?? []).length })),
+    staleItems
+  });
+}));
+
 app.get("/api/orgs/:orgId/sales", asyncRoute(async (req, res) => {
   res.json(await prisma.sale.findMany({ where: { orgId: param(req, "orgId") }, orderBy: { soldAt: "desc" } }));
+}));
+
+app.get("/api/orgs/:orgId/sales/summary", asyncRoute(async (req, res) => {
+  const orgId = param(req, "orgId");
+  const page = positiveInt(req.query.page, 1);
+  const pageSize = Math.min(100, positiveInt(req.query.pageSize, 25));
+  const channel = String(req.query.channel || "").trim();
+  const multiOnly = String(req.query.multiOnly || "") === "true";
+  const baseWhere: Prisma.SaleWhereInput = { orgId, ...(channel ? { channel } : {}) };
+  const multiSaleIds = multiOnly
+    ? (await prisma.saleItem.groupBy({ by: ["saleId"], where: { orgId }, _count: true })).filter((row) => row._count >= 2).map((row) => row.saleId)
+    : undefined;
+  const where: Prisma.SaleWhereInput = { ...baseWhere, ...(multiSaleIds ? { id: { in: multiSaleIds } } : {}) };
+  const sales = await prisma.sale.findMany({ where, orderBy: [{ soldAt: "desc" }, { id: "desc" }], skip: (page - 1) * pageSize, take: pageSize });
+  const total = await prisma.sale.count({ where });
+  const saleIds = sales.map((sale) => sale.id);
+  const itemGroups = saleIds.length ? await prisma.saleItem.groupBy({ by: ["saleId"], where: { orgId, saleId: { in: saleIds } }, _count: true, _sum: { costBasisCents: true } }) : [];
+  const itemStats = new Map(itemGroups.map((group) => [group.saleId, { itemCount: group._count, costBasisCents: group._sum.costBasisCents ?? 0 }]));
+  res.json({
+    rows: sales.map((sale) => {
+      const stats = itemStats.get(sale.id) ?? { itemCount: 0, costBasisCents: 0 };
+      return {
+        id: sale.id,
+        soldAt: sale.soldAt,
+        channel: sale.channel,
+        grossItemSubtotalCents: sale.grossItemSubtotalCents,
+        netProfitCents: sale.grossItemSubtotalCents - sale.discountCents + sale.shippingChargedCents - sale.platformFeeCents - sale.paymentFeeCents - sale.actualShippingCostCents - sale.packagingCostCents - sale.otherCostCents - stats.costBasisCents,
+        itemCount: stats.itemCount,
+        payoutStatus: sale.payoutStatus
+      };
+    }),
+    total,
+    page,
+    pageSize
+  });
+}));
+
+app.get("/api/orgs/:orgId/sale-items", asyncRoute(async (req, res) => {
+  const saleIds = csvValues(req.query.saleIds);
+  if (!saleIds.length) {
+    res.json([]);
+    return;
+  }
+  res.json(await prisma.saleItem.findMany({ where: { orgId: param(req, "orgId"), saleId: { in: saleIds } } }));
+}));
+
+app.get("/api/orgs/:orgId/sales/:saleId", asyncRoute(async (req, res) => {
+  const orgId = param(req, "orgId");
+  const saleId = param(req, "saleId");
+  const sale = await prisma.sale.findFirst({ where: { orgId, id: saleId } });
+  const items = await prisma.saleItem.findMany({ where: { orgId, saleId } });
+  if (!sale) throw new HttpError(404, "Sale not found.");
+  res.json({ sale, items });
 }));
 
 app.get("/api/orgs/:orgId/sales/:saleId/items", asyncRoute(async (req, res) => {
@@ -283,6 +465,53 @@ app.patch("/api/orgs/:orgId/sales/:saleId/payment-match", requireWriteRole, asyn
     prisma.sale.update({ where: { id: saleId, orgId }, data: { payoutStatus: "matched", paymentIds: [paymentId] } })
   ]);
   res.json({ ok: true });
+}));
+
+app.get("/api/orgs/:orgId/reconciliation", asyncRoute(async (req, res) => {
+  const orgId = param(req, "orgId");
+  const payments = await prisma.payment.findMany({
+    where: { orgId, status: { not: "matched" } },
+    orderBy: { date: "desc" },
+    select: { id: true, source: true, amountCents: true, date: true }
+  });
+  const sales = await prisma.sale.findMany({
+    where: { orgId, payoutStatus: { not: "matched" } },
+    orderBy: { soldAt: "desc" },
+    select: { id: true, channel: true, totalReceivedCents: true, soldAt: true }
+  });
+  res.json({
+    payments,
+    sales,
+    suggestions: payments.flatMap((payment) =>
+      sales
+        .filter((sale) => Math.abs(payment.amountCents - sale.totalReceivedCents) <= 100)
+        .map((sale) => ({ payment: payment.id, sale: sale.id, amountCents: payment.amountCents, reason: "Exact or near amount match" }))
+    )
+  });
+}));
+
+app.get("/api/orgs/:orgId/events/summary", asyncRoute(async (req, res) => {
+  const orgId = param(req, "orgId");
+  const events = await prisma.event.findMany({ where: { orgId }, orderBy: { date: "desc" } });
+  const latest = events[0];
+  if (!latest) {
+    res.json({ events, latest: null });
+    return;
+  }
+  const sales = await prisma.sale.findMany({ where: { orgId, eventId: latest.id } });
+  const saleIds = sales.map((sale) => sale.id);
+  const itemCount = saleIds.length ? await prisma.saleItem.count({ where: { orgId, saleId: { in: saleIds } } }) : 0;
+  const grossCents = sales.reduce((sum, sale) => sum + sale.grossItemSubtotalCents, 0);
+  res.json({
+    events,
+    latest: {
+      eventId: latest.id,
+      grossCents,
+      itemCount,
+      averageOrderValueCents: averageOrderValue(grossCents, sales.length),
+      profitAfterBoothCents: grossCents - latest.boothFeeCents
+    }
+  });
 }));
 
 const simpleResources = [

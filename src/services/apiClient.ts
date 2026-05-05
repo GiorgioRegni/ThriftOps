@@ -1,7 +1,5 @@
 import { auth } from "../lib/firebase";
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -10,7 +8,7 @@ export class ApiError extends Error {
 
 export const apiRequest = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
   const token = await auth.currentUser?.getIdToken();
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(path, {
     ...options,
     headers: {
       "content-type": "application/json",

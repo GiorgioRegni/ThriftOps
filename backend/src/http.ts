@@ -47,6 +47,7 @@ export const requireAuth = async (req: Request, _res: Response, next: NextFuncti
     };
     next();
   } catch (error) {
+    if (!(error instanceof HttpError)) console.error("Firebase token verification failed:", error);
     next(error instanceof HttpError ? error : new HttpError(401, "Invalid bearer token."));
   }
 };

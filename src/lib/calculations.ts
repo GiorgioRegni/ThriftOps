@@ -22,7 +22,19 @@ export const netProfitForSaleItem = (input: SaleItemProfitInput): number =>
   input.allocatedPackagingCostCents -
   input.allocatedEventFeeCents;
 
-export const saleLevelNetProfit = (sale: Sale, saleItems: Pick<SaleItem, "costBasisCents">[], allocatedEventFeeCents = 0): number =>
+type SaleLevelNetProfitInput = Pick<
+  Sale,
+  | "grossItemSubtotalCents"
+  | "discountCents"
+  | "shippingChargedCents"
+  | "platformFeeCents"
+  | "paymentFeeCents"
+  | "actualShippingCostCents"
+  | "packagingCostCents"
+  | "otherCostCents"
+>;
+
+export const saleLevelNetProfit = (sale: SaleLevelNetProfitInput, saleItems: Pick<SaleItem, "costBasisCents">[], allocatedEventFeeCents = 0): number =>
   sale.grossItemSubtotalCents -
   sale.discountCents +
   sale.shippingChargedCents -

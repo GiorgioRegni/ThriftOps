@@ -5,7 +5,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useOrg } from "../../hooks/useOrg";
 
 const navLinks = [
-  { to: "/", label: "Dashboard", icon: Home },
+  { to: "/dashboard", label: "Dashboard", icon: Home },
   { to: "/inventory", label: "Inventory", icon: Package },
   { to: "/sell", label: "Sell", icon: ShoppingCart },
   { to: "/sales", label: "Sales", icon: Receipt },

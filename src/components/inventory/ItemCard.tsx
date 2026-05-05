@@ -8,7 +8,7 @@ export const ItemCard = ({ item }: { item: Item }) => (
   <Link to={`/inventory/${item.id}`} className="block rounded-2xl border border-slate-100 bg-white p-2.5 shadow-card transition hover:-translate-y-0.5 hover:shadow-soft">
     <div className="flex gap-3">
       <div className="h-24 w-20 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-slate-100 to-slate-200">
-        {item.photos[0] ? <img className="h-full w-full object-cover" src={item.photos[0].url} alt={item.title} /> : <div className="grid h-full place-items-center text-xs font-semibold text-muted">No photo</div>}
+        {item.photos[0] ? <img className="h-full w-full object-cover" src={item.photos[0].url} alt={item.title} loading="lazy" decoding="async" /> : <div className="grid h-full place-items-center text-xs font-semibold text-muted">No photo</div>}
       </div>
       <div className="min-w-0 flex-1 py-1">
         <div className="flex items-start justify-between gap-2">

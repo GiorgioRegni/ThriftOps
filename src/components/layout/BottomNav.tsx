@@ -2,7 +2,7 @@ import { BarChart3, Home, Package, Plus, ShoppingCart } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 const links = [
-  { to: "/", label: "Dashboard", icon: Home },
+  { to: "/dashboard", label: "Dashboard", icon: Home },
   { to: "/inventory", label: "Inventory", icon: Package },
   { to: "/sell", label: "Sell", icon: ShoppingCart },
   { to: "/reports", label: "Reports", icon: BarChart3 }

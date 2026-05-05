@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Sale, SaleItem } from "../types/domain";
-import { listSaleItems, listSales } from "../services/saleService";
+import { listSaleItemsBulk, listSales } from "../services/saleService";
 import { useOrg } from "./useOrg";
 
 export const useSales = () => {
@@ -15,7 +15,12 @@ export const useSales = () => {
     setError("");
     try {
       const nextSales = await listSales(org.id);
-      const entries = await Promise.all(nextSales.map(async (sale) => [sale.id, await listSaleItems(org.id, sale.id)] as const));
+      const saleItems = await listSaleItemsBulk(org.id, nextSales.map((sale) => sale.id));
+      const grouped = saleItems.reduce<Record<string, SaleItem[]>>((acc, saleItem) => {
+        acc[saleItem.saleId] = [...(acc[saleItem.saleId] ?? []), saleItem];
+        return acc;
+      }, {});
+      const entries = nextSales.map((sale) => [sale.id, grouped[sale.id] ?? []] as const);
       setSales(nextSales);
       setSaleItemsBySale(Object.fromEntries(entries));
     } catch (err) {

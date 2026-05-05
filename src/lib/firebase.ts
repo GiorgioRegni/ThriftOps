@@ -5,15 +5,15 @@ import { connectStorageEmulator, getStorage } from "firebase/storage";
 export const useFirebaseEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true";
 
 const requiredFirebaseEnv = [
-  "VITE_FIREBASE_API_KEY",
-  "VITE_FIREBASE_AUTH_DOMAIN",
-  "VITE_FIREBASE_PROJECT_ID",
-  "VITE_FIREBASE_STORAGE_BUCKET",
-  "VITE_FIREBASE_MESSAGING_SENDER_ID",
-  "VITE_FIREBASE_APP_ID"
+  { key: "VITE_FIREBASE_API_KEY", value: import.meta.env.VITE_FIREBASE_API_KEY },
+  { key: "VITE_FIREBASE_AUTH_DOMAIN", value: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN },
+  { key: "VITE_FIREBASE_PROJECT_ID", value: import.meta.env.VITE_FIREBASE_PROJECT_ID },
+  { key: "VITE_FIREBASE_STORAGE_BUCKET", value: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET },
+  { key: "VITE_FIREBASE_MESSAGING_SENDER_ID", value: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID },
+  { key: "VITE_FIREBASE_APP_ID", value: import.meta.env.VITE_FIREBASE_APP_ID }
 ] as const;
 
-export const missingFirebaseEnv = requiredFirebaseEnv.filter((key) => !import.meta.env[key]);
+export const missingFirebaseEnv = requiredFirebaseEnv.filter(({ value }) => !value).map(({ key }) => key);
 export const isFirebaseConfigured = missingFirebaseEnv.length === 0;
 
 const demoProjectId = "demo-thriftops";

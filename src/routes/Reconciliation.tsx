@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { DateInput } from "../components/forms/DateInput";
 import { MoneyInput } from "../components/forms/MoneyInput";
 import { SelectField } from "../components/forms/SelectField";
@@ -7,32 +7,38 @@ import { ReportTable } from "../components/reports/ReportTable";
 import { centsFromDecimal, formatMoney } from "../lib/money";
 import { timestampFromInput, todayInput } from "../lib/dates";
 import { useOrg } from "../hooks/useOrg";
-import { useSales } from "../hooks/useSales";
-import { createPayment, listPayments, updatePaymentMatch } from "../services/paymentService";
+import { createPayment, updatePaymentMatch } from "../services/paymentService";
+import { getReconciliationData, type ReconciliationPayment, type ReconciliationSale, type ReconciliationSuggestion } from "../services/reconciliationService";
 import { linkPaymentToSales } from "../services/saleService";
-import type { Payment, PaymentSource } from "../types/domain";
+import type { PaymentSource } from "../types/domain";
 
 export const Reconciliation = () => {
   const { org } = useOrg();
-  const { sales, refresh: refreshSales } = useSales();
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [payments, setPayments] = useState<ReconciliationPayment[]>([]);
+  const [sales, setSales] = useState<ReconciliationSale[]>([]);
+  const [suggestions, setSuggestions] = useState<ReconciliationSuggestion[]>([]);
   const [selectedPayment, setSelectedPayment] = useState("");
   const [selectedSales, setSelectedSales] = useState<string[]>([]);
   const [form, setForm] = useState({ date: todayInput(), source: "venmo", amount: "", externalTransactionId: "", counterparty: "", note: "" });
+  const refresh = async () => {
+    if (!org) return;
+    const data = await getReconciliationData(org.id);
+    setPayments(data.payments);
+    setSales(data.sales);
+    setSuggestions(data.suggestions);
+  };
   useEffect(() => {
-    if (org) void listPayments(org.id).then(setPayments);
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [org]);
   if (!org) return null;
-  const unmatchedPayments = payments.filter((payment) => payment.status !== "matched");
-  const unmatchedSales = sales.filter((sale) => sale.payoutStatus !== "matched");
-  const suggestions = useMemo(() => unmatchedPayments.flatMap((payment) => unmatchedSales.filter((sale) => Math.abs(payment.amountCents - sale.totalReceivedCents) <= 100).map((sale) => ({ payment: payment.id, sale: sale.id, amount: formatMoney(payment.amountCents), reason: "Exact or near amount match" }))), [unmatchedPayments, unmatchedSales]);
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">Reconciliation</h2>
       <form className="grid gap-3 rounded-lg border bg-white p-4 md:grid-cols-3" onSubmit={async (event) => {
         event.preventDefault();
         await createPayment(org.id, { date: timestampFromInput(form.date), source: form.source as PaymentSource, amountCents: centsFromDecimal(form.amount), externalTransactionId: form.externalTransactionId, counterparty: form.counterparty, note: form.note });
-        setPayments(await listPayments(org.id));
+        await refresh();
       }}>
         <DateInput label="Payment date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
         <SelectField label="Source" value={form.source} onChange={(event) => setForm({ ...form, source: event.target.value })} options={["venmo", "paypal", "noihsaf", "stripe", "cash", "bank", "other"].map((value) => ({ value, label: value }))} />
@@ -45,20 +51,21 @@ export const Reconciliation = () => {
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-lg border bg-white p-4">
           <h3 className="font-semibold">Unmatched payments</h3>
-          <div className="mt-3 space-y-2">{unmatchedPayments.map((payment) => <label key={payment.id} className="flex gap-2 text-sm"><input type="radio" name="payment" value={payment.id} checked={selectedPayment === payment.id} onChange={() => setSelectedPayment(payment.id)} /> {payment.source} · {formatMoney(payment.amountCents)} · {new Date(payment.date).toLocaleDateString()}</label>)}</div>
+          <div className="mt-3 space-y-2">{payments.map((payment) => <label key={payment.id} className="flex gap-2 text-sm"><input type="radio" name="payment" value={payment.id} checked={selectedPayment === payment.id} onChange={() => setSelectedPayment(payment.id)} /> {payment.source} · {formatMoney(payment.amountCents)} · {new Date(payment.date).toLocaleDateString()}</label>)}</div>
         </div>
         <div className="rounded-lg border bg-white p-4">
           <h3 className="font-semibold">Sales needing payout match</h3>
-          <div className="mt-3 space-y-2">{unmatchedSales.map((sale) => <label key={sale.id} className="flex gap-2 text-sm"><input type="checkbox" checked={selectedSales.includes(sale.id)} onChange={(event) => setSelectedSales(event.target.checked ? [...selectedSales, sale.id] : selectedSales.filter((id) => id !== sale.id))} /> {sale.channel} · {formatMoney(sale.totalReceivedCents)} · {new Date(sale.soldAt).toLocaleDateString()}</label>)}</div>
+          <div className="mt-3 space-y-2">{sales.map((sale) => <label key={sale.id} className="flex gap-2 text-sm"><input type="checkbox" checked={selectedSales.includes(sale.id)} onChange={(event) => setSelectedSales(event.target.checked ? [...selectedSales, sale.id] : selectedSales.filter((id) => id !== sale.id))} /> {sale.channel} · {formatMoney(sale.totalReceivedCents)} · {new Date(sale.soldAt).toLocaleDateString()}</label>)}</div>
         </div>
       </section>
       <button className="tap rounded-md bg-ink px-4 text-white" disabled={!selectedPayment || !selectedSales.length} onClick={async () => {
         await updatePaymentMatch(org.id, selectedPayment, selectedSales, "matched");
         await linkPaymentToSales(org.id, selectedSales, selectedPayment);
-        setPayments(await listPayments(org.id));
-        await refreshSales();
+        await refresh();
+        setSelectedPayment("");
+        setSelectedSales([]);
       }}>Link payment to selected sales</button>
-      <ReportTable columns={["payment", "sale", "amount", "reason"]} rows={suggestions} />
+      <ReportTable columns={["payment", "sale", "amount", "reason"]} rows={suggestions.map((suggestion) => ({ ...suggestion, amount: formatMoney(suggestion.amountCents) }))} />
     </div>
   );
 };
